@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IOS &rarr; NX-OS Converter</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Cisco IOS XE &rarr; NX-OS</h1>
+      <p class="subtitle">Local-only config converter &middot; nothing leaves this machine</p>
+    </div>
+    <div class="direction-toggle" role="tablist" aria-label="Direction">
+      <button type="button" id="dir-ios2nxos" class="tab active" role="tab" aria-selected="true">
+        IOS XE &rarr; NX-OS
+      </button>
+      <button type="button" id="dir-nxos2ios" class="tab" role="tab" aria-selected="false">
+        NX-OS &rarr; IOS XE
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel" aria-label="Source configuration">
+      <div class="panel-head">
+        <h2 id="src-heading">1 &middot; Paste your Catalyst / IOS XE config</h2>
+        <div class="panel-actions">
+          <label class="ghost file-pick">
+            <input type="file" id="file" accept=".txt,.cfg,.conf,.log,text/plain" hidden />
+            Load file&hellip;
+          </label>
+          <button type="button" id="load-sample" class="ghost">Load sample</button>
+          <button type="button" id="clear" class="ghost">Clear</button>
+        </div>
+      </div>
+      <label for="input" class="sr-only">Source configuration</label>
+      <textarea id="input" spellcheck="false"
+                placeholder="Paste a Cisco IOS XE (Catalyst) running-config here, or click 'Load sample' to try it out."></textarea>
+
+      <details class="opts">
+        <summary>Advanced options</summary>
+        <label for="opt-media">Default media type (used only when going NX-OS &rarr; IOS XE)</label>
+        <input type="text" id="opt-media" value="GigabitEthernet"
+               pattern="[A-Za-z0-9]{1,40}" maxlength="40"
+               autocomplete="off" spellcheck="false" />
+        <p class="hint">NX-OS names every port <code>Ethernet</code>; the reverse conversion uses this media prefix for interfaces that weren't tagged.</p>
+      </details>
+
+      <div class="actions">
+        <button type="button" id="convert" class="primary">Convert &rarr;</button>
+        <button type="button" id="verify" class="secondary">Verify round-trip</button>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel" aria-label="Converted output">
+      <div class="panel-head">
+        <h2 id="out-heading">2 &middot; Deployable NX-OS output</h2>
+        <div class="panel-actions">
+          <select id="format" aria-label="Output format">
+            <option value="deployable" selected>Deployable CLI</option>
+            <option value="sidebyside">Side-by-side (Markdown)</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="result" class="sr-only">Converted output</label>
+      <textarea id="result" readonly spellcheck="false"
+                placeholder="The converted configuration will appear here."></textarea>
+
+      <span id="badge" class="badge" hidden></span>
+
+      <div class="actions">
+        <button type="button" id="copy" class="secondary" disabled>Copy to clipboard</button>
+        <button type="button" id="download" class="primary" disabled>Download</button>
+        <input type="text" id="filename" value="converted_ios2nxos.cfg"
+               autocomplete="off" spellcheck="false" />
+      </div>
+      <p class="hint">Markers like <code>! ==IOSXE==</code> preserve lines that have no 1-to-1 NX-OS equivalent, so an A &rarr; B &rarr; A round-trip is lossless.</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Runs entirely on 127.0.0.1 &middot; no data leaves your machine &middot;
+      converter module vendored from
+      <a href="https://github.com/jim-coyne/config-converter" target="_blank" rel="noopener noreferrer">jim-coyne/config-converter</a>.
+    </span>
+  </footer>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

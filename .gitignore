@@ -1,0 +1,32 @@
+# ---- Keep real configs out of the repo --------------------------------------
+# The two tracked sample files are generic examples from the public upstream
+# repo (RFC 1918 addresses, invented hostnames) and are safe to publish.  Any
+# other .cfg / .conf / .log in the working tree is almost certainly a real
+# device config and must NEVER be committed.  The explicit "!" lines below
+# re-allow only the two known-good samples.
+*.cfg
+*.conf
+*.log
+!samples/sample_ios.cfg
+!samples/sample_nxos.cfg
+
+# Common places people stash real configs while testing.
+/configs/
+/customer-configs/
+/private/
+/scratch/
+
+# ---- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ---- Editors / OS -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
