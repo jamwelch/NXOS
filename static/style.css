@@ -15,6 +15,10 @@
 
 * { box-sizing: border-box; }
 
+/* App-shell layout: html/body fill the viewport exactly, the main grid
+   takes the remaining space, and each panel scrolls internally.  This
+   keeps the action buttons pinned to the bottom of each panel so they
+   stay reachable no matter how long the config is. */
 html, body { height: 100%; }
 
 body {
@@ -25,10 +29,12 @@ body {
   line-height: 1.45;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
+  flex: 0 0 auto;
   padding: 18px 28px;
   border-bottom: 1px solid var(--edge);
   background: linear-gradient(180deg, #131f38, #0b1220);
@@ -66,15 +72,29 @@ body {
 }
 
 .layout {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
   padding: 20px 28px;
   align-items: stretch;
-  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+body.has-diff .layout {
+  grid-template-columns: 1fr 1fr 1.3fr;
+}
+@media (max-width: 1200px) {
+  body.has-diff .layout { grid-template-columns: 1fr 1fr; }
+  body.has-diff #diff-panel {
+    grid-column: 1 / -1;
+    max-height: 60vh;
+  }
 }
 @media (max-width: 960px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout,
+  body.has-diff .layout { grid-template-columns: 1fr; overflow: auto; }
+  body.has-diff #diff-panel { grid-column: auto; max-height: none; }
 }
 
 .panel {
@@ -84,7 +104,13 @@ body {
   padding: 16px 16px 18px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
+
+#diff-panel { display: none; }
+body.has-diff #diff-panel { display: flex; }
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -129,8 +155,8 @@ select:focus, input:focus, textarea:focus {
 }
 
 textarea {
-  min-height: 360px;
-  resize: vertical;
+  min-height: 0;
+  resize: none;
   font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   font-size: .82rem;
   line-height: 1.5;
@@ -159,6 +185,7 @@ textarea {
 .opts input[type="text"] { width: 100%; }
 
 .actions {
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   margin-top: 14px;
@@ -166,6 +193,11 @@ textarea {
   flex-wrap: wrap;
 }
 .actions #filename { flex: 1 1 200px; min-width: 160px; }
+
+.panel-head { flex: 0 0 auto; }
+.opts       { flex: 0 0 auto; }
+.status     { flex: 0 0 auto; }
+.hint       { flex: 0 0 auto; }
 
 button {
   border: 1px solid transparent;
@@ -218,9 +250,160 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .badge.bad { background: rgba(239,68,68,.15);  color: var(--bad); border: 1px solid rgba(239,68,68,.4); }
 
 .foot {
+  flex: 0 0 auto;
   padding: 12px 28px 18px;
   color: var(--muted);
   font-size: .74rem;
   border-top: 1px solid var(--edge);
 }
 .foot a { color: var(--accent); }
+
+/* ---------- Pop-out standalone page ---------- */
+.popout-body { /* single full-width column */ }
+.popout-main {
+  flex: 1 1 auto;
+  display: flex;
+  padding: 20px 28px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- Highlighted diff view ---------- */
+:root {
+  --diff-mod-bg:      #413a1a;
+  --diff-mod-edge:    #facc15;
+  --diff-add-bg:      #0f3a1f;
+  --diff-add-edge:    #22ff88;
+  --diff-rem-bg:      #3a1414;
+  --diff-rem-edge:    #ff4d6d;
+  --diff-pres-bg:     #3a2410;
+  --diff-pres-edge:   #fb923c;
+  --diff-unchg-bg:    transparent;
+  --diff-unchg-edge:  #334155;
+}
+
+.diff-view {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #050a16;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diff-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--edge);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-size: .76rem;
+}
+.diff-legend-title {
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+  border: 1px solid var(--edge);
+  color: var(--text);
+}
+.chip::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.chip-modified::before  { background: var(--diff-mod-edge); }
+.chip-added::before     { background: var(--diff-add-edge); }
+.chip-removed::before   { background: var(--diff-rem-edge); }
+.chip-preserved::before { background: var(--diff-pres-edge); }
+.chip-unchanged::before { background: var(--muted); }
+
+.diff-stats {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: .74rem;
+}
+
+.diff-table-wrap {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+.diff-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-2);
+  color: var(--muted);
+  text-align: left;
+  font-weight: 600;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--edge);
+  z-index: 1;
+}
+.diff-table td {
+  padding: 6px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid #111a2e;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-table td.diff-src,
+.diff-table td.diff-dst {
+  font-family: inherit;
+  min-width: 220px;
+}
+.diff-table td.diff-change {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.diff-table td.diff-note {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--muted);
+}
+.diff-table td.diff-placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.diff-row                    { border-left: 4px solid transparent; }
+.diff-row.diff-modified      { background: var(--diff-mod-bg);    border-left-color: var(--diff-mod-edge);    }
+.diff-row.diff-added         { background: var(--diff-add-bg);    border-left-color: var(--diff-add-edge);    }
+.diff-row.diff-removed       { background: var(--diff-rem-bg);    border-left-color: var(--diff-rem-edge);    }
+.diff-row.diff-preserved     { background: var(--diff-pres-bg);   border-left-color: var(--diff-pres-edge);   }
+.diff-row.diff-unchanged     { background: var(--diff-unchg-bg);  border-left-color: var(--diff-unchg-edge);  }
+
+.diff-row.diff-modified  td.diff-change { color: var(--diff-mod-edge);  }
+.diff-row.diff-added     td.diff-change { color: var(--diff-add-edge);  }
+.diff-row.diff-removed   td.diff-change { color: var(--diff-rem-edge);  }
+.diff-row.diff-preserved td.diff-change { color: var(--diff-pres-edge); }
