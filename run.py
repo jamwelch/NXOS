@@ -34,33 +34,32 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
 SAMPLES_DIR = os.path.join(HERE, "samples")
 
-# Make the vendored converter importable.
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 from vendor import nxos_catalyst_converter as converter  # noqa: E402
 
 LOG = logging.getLogger("ios2nxos")
 
-# Request-body cap: converter runs in-process so we need a DoS guard.
-MAX_BODY = 4 * 1024 * 1024  # 4 MiB
-# Strict allow-list for the "media" option (used by nxos->ios only).
+MAX_BODY = 4 * 1024 * 1024
 MEDIA_RE = re.compile(r"^[A-Za-z0-9]{1,40}$")
-# Host-header allow-list -- defends against DNS-rebinding against a
-# loopback server.  Browsers targeting localhost will always send one of
-# these hosts.  We populate the port at startup.
 _ALLOWED_HOST_NAMES = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
 VALID_DIRECTIONS = {"ios2nxos", "nxos2ios"}
 VALID_FORMATS = {"deployable", "sidebyside"}
 
+# Comment markers the converter uses to preserve lines that cannot be
+# translated 1:1.  Copied from the vendored module so the classifier
+# stays in sync with how the converter writes them.
+_PRESERVE_MARKERS = (
+    converter.MARK_NX.strip(),
+    converter.MARK_IOS.strip(),
+    converter.MARK_MEDIA.strip(),
+)
+
 
 class BadRequest(ValueError):
     """Raised for client-side input problems -> HTTP 400."""
 
-
-# ---------------------------------------------------------------------------
-# Conversion API (wraps the vendored converter)
-# ---------------------------------------------------------------------------
 
 def _validate(payload):
     direction = payload.get("direction", "ios2nxos")
@@ -99,17 +98,62 @@ def do_verify(payload):
     return {"ok": bool(ok), "report": report}
 
 
-# ---------------------------------------------------------------------------
-# HTTP layer
-# ---------------------------------------------------------------------------
+def _classify(source: str, output_lines):
+    """Bucket one Record into a change type for the highlighted diff view."""
+    src = source.strip()
+    outs = [o for o in output_lines if o.strip() != ""]
+    if src.startswith("(") and src.endswith(")"):
+        return "added"
+    if not outs:
+        return "removed"
+    if all(any(o.lstrip().startswith(m) for m in _PRESERVE_MARKERS)
+           for o in outs):
+        return "preserved"
+    if len(outs) == 1 and outs[0].strip() == src:
+        return "unchanged"
+    return "modified"
 
-# Served static files (relative path -> absolute path).  Explicit allow-list
-# so a bug in path-joining cannot leak arbitrary files from the project.
+
+def do_diff(payload):
+    direction, content, _fmt, media = _validate(payload)
+    records = (converter.iosxe_to_nxos(content, media)
+               if direction == "ios2nxos"
+               else converter.nxos_to_iosxe(content, media))
+    rows = []
+    stats = {"unchanged": 0, "modified": 0, "added": 0,
+             "removed": 0, "preserved": 0}
+    for rec in records:
+        if rec.source.strip() == "" and not [o for o in rec.output
+                                             if o.strip() != ""]:
+            continue
+        change_type = _classify(rec.source, rec.output)
+        stats[change_type] += 1
+        rows.append({
+            "source": rec.source,
+            "output": list(rec.output),
+            "note": rec.note or "",
+            "category": rec.category or "",
+            "change_type": change_type,
+        })
+    labels = (("NX-OS (source)", "IOS XE (target)")
+              if direction == "nxos2ios"
+              else ("IOS XE (source)", "NX-OS (target)"))
+    return {
+        "direction": direction,
+        "source_label": labels[0],
+        "target_label": labels[1],
+        "rows": rows,
+        "stats": stats,
+    }
+
+
 _STATIC_FILES = {
     "/": "index.html",
     "/index.html": "index.html",
     "/style.css": "style.css",
     "/app.js": "app.js",
+    "/highlight.html": "highlight.html",
+    "/popout.js": "popout.js",
     "/samples/sample_ios.cfg": "sample_ios.cfg",
     "/samples/sample_nxos.cfg": "sample_nxos.cfg",
 }
@@ -122,11 +166,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         LOG.info("%s - %s", self.address_string(), fmt % args)
 
-    # --- shared helpers ------------------------------------------------
     def _common_security_headers(self):
-        # Local, same-origin app.  Lock it down so even if the browser is
-        # tricked into loading our page in a weird context, it cannot
-        # pull in remote scripts or be framed.
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -158,8 +198,6 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _host_allowed(self):
-        # Defense in depth against DNS rebinding: refuse requests whose
-        # Host header is not a known loopback name.
         host = (self.headers.get("Host") or "").strip()
         if not host:
             return False
@@ -204,7 +242,6 @@ class Handler(BaseHTTPRequestHandler):
             ctype += "; charset=utf-8"
         return self._send_bytes(200, body, ctype)
 
-    # --- routes --------------------------------------------------------
     def do_GET(self):
         if not self._host_allowed():
             return self._send_json(403, {"error": "forbidden host"})
@@ -214,7 +251,6 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_static(path)
 
     def do_HEAD(self):
-        # Keep responses consistent with GET for cache/preflight clients.
         self.do_GET()
 
     def do_POST(self):
@@ -227,17 +263,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(200, do_convert(payload))
             if path == "/api/verify":
                 return self._send_json(200, do_verify(payload))
+            if path == "/api/diff":
+                return self._send_json(200, do_diff(payload))
             return self._send_json(404, {"error": "not found"})
         except BadRequest as exc:
             return self._send_json(400, {"error": str(exc)})
-        except Exception as exc:  # defensive -- converter is fool-proof
+        except Exception as exc:
             LOG.exception("conversion failed")
             return self._send_json(500, {"error": f"internal error: {exc}"})
 
-
-# ---------------------------------------------------------------------------
-# Launcher
-# ---------------------------------------------------------------------------
 
 def _parse_args(argv):
     p = argparse.ArgumentParser(

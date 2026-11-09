@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Highlighted comparison &mdash; IOS XE &harr; NX-OS</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="popout-body">
+  <header class="topbar">
+    <div class="brand">
+      <h1 id="popout-title">Highlighted comparison</h1>
+      <p class="subtitle">Color-coded side-by-side &middot; opened from the main window</p>
+    </div>
+    <div class="panel-actions">
+      <button type="button" id="refresh" class="ghost" title="Re-run the diff with the current payload">Refresh</button>
+      <button type="button" id="close-tab" class="ghost" title="Close this tab">Close</button>
+    </div>
+  </header>
+
+  <main class="popout-main">
+    <section class="panel" style="flex: 1 1 auto;">
+      <div class="diff-view" id="diff-view">
+        <div class="diff-legend" aria-label="Color legend">
+          <span class="diff-legend-title">Legend:</span>
+          <span class="chip chip-modified">Modified</span>
+          <span class="chip chip-added">Added</span>
+          <span class="chip chip-removed">Removed</span>
+          <span class="chip chip-preserved">Preserved as comment</span>
+          <span class="chip chip-unchanged">Unchanged</span>
+          <span id="diff-stats" class="diff-stats"></span>
+        </div>
+        <div class="diff-table-wrap">
+          <table class="diff-table" id="diff-table">
+            <thead>
+              <tr>
+                <th scope="col" id="diff-src-h">Source</th>
+                <th scope="col" id="diff-dst-h">Target</th>
+                <th scope="col">Change</th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="diff-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <p id="popout-status" class="status" role="status" aria-live="polite" style="padding: 0 4px;">Loading&hellip;</p>
+    </section>
+  </main>
+
+  <script src="/popout.js" defer></script>
+</body>
+</html>

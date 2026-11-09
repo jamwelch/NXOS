@@ -1,10 +1,5 @@
 "use strict";
 
-// Local IOS <-> NX-OS converter front-end.
-// All DOM writes go through textContent / value; the only user-supplied
-// text that reaches the DOM is placed in a <textarea> value, which is
-// not parsed as HTML.
-
 const $ = (id) => document.getElementById(id);
 
 const el = {
@@ -26,13 +21,21 @@ const el = {
   outHeading:$("out-heading"),
   tabI:      $("dir-ios2nxos"),
   tabN:      $("dir-nxos2ios"),
+  highlight: $("highlight"),
+  hideDiff:  $("hide-diff"),
+  popout:    $("popout"),
+  diffPanel: $("diff-panel"),
+  diffTable: $("diff-table"),
+  diffTbody: $("diff-tbody"),
+  diffSrcH:  $("diff-src-h"),
+  diffDstH:  $("diff-dst-h"),
+  diffStats: $("diff-stats"),
 };
 
 const STATE = {
   direction: "ios2nxos",
 };
 
-// --- UI helpers -----------------------------------------------------------
 function setStatus(msg, kind) {
   el.status.textContent = msg || "";
   el.status.className = "status" + (kind ? " " + kind : "");
@@ -49,6 +52,18 @@ function setOutput(text) {
   const has = (text || "").length > 0;
   el.copy.disabled = !has;
   el.download.disabled = !has;
+  el.highlight.disabled = !has;
+  // A fresh text result invalidates any highlighted view we were showing.
+  closeDiffPanel();
+}
+
+function openDiffPanel() {
+  document.body.classList.add("has-diff");
+  el.highlight.textContent = "Refresh highlights";
+}
+function closeDiffPanel() {
+  document.body.classList.remove("has-diff");
+  el.highlight.textContent = "Highlight changes";
 }
 
 function suggestFilename() {
@@ -76,11 +91,9 @@ function setDirection(dir) {
       ? "Paste a Cisco IOS XE (Catalyst) running-config here, or click 'Load sample' to try it out."
       : "Paste a Cisco NX-OS (Nexus) running-config here, or click 'Load sample' to try it out."
   );
-  el.convert.textContent = i2n ? "Convert \u2192" : "Convert \u2192";
   suggestFilename();
 }
 
-// --- API ------------------------------------------------------------------
 async function postJSON(path, body) {
   const res = await fetch(path, {
     method: "POST",
@@ -122,10 +135,127 @@ async function doConvert() {
   }
 }
 
+// Build and render the highlighted diff table from server JSON.  All
+// user-supplied text reaches the DOM through textContent only -- never
+// innerHTML -- so a malicious config can't inject markup into the page.
+function renderDiff(data) {
+  el.diffSrcH.textContent = data.source_label || "Source";
+  el.diffDstH.textContent = data.target_label || "Target";
+
+  const tbody = el.diffTbody;
+  tbody.textContent = "";
+
+  const changeLabel = {
+    modified: "Modified",
+    added: "Added",
+    removed: "Removed",
+    preserved: "Preserved",
+    unchanged: "Unchanged",
+  };
+
+  const frag = document.createDocumentFragment();
+  for (const row of (data.rows || [])) {
+    const tr = document.createElement("tr");
+    tr.className = "diff-row diff-" + row.change_type;
+
+    const srcTxt = (row.source || "").replace(/\s+$/, "");
+    const outTxt = (row.output || [])
+      .filter((o) => o != null)
+      .join("\n")
+      .replace(/\s+$/, "");
+
+    const srcTd = document.createElement("td");
+    srcTd.className = "diff-src";
+    if (srcTxt === "" || /^\(.*\)$/.test(srcTxt.trim())) {
+      srcTd.classList.add("diff-placeholder");
+      srcTd.textContent = srcTxt.trim() || "\u2014";
+    } else {
+      srcTd.textContent = srcTxt;
+    }
+
+    const dstTd = document.createElement("td");
+    dstTd.className = "diff-dst";
+    if (outTxt === "") {
+      dstTd.classList.add("diff-placeholder");
+      dstTd.textContent = "(removed)";
+    } else {
+      dstTd.textContent = outTxt;
+    }
+
+    const chTd = document.createElement("td");
+    chTd.className = "diff-change";
+    chTd.textContent = changeLabel[row.change_type] || row.change_type;
+
+    const noteTd = document.createElement("td");
+    noteTd.className = "diff-note";
+    noteTd.textContent = row.note || "";
+
+    tr.appendChild(srcTd);
+    tr.appendChild(dstTd);
+    tr.appendChild(chTd);
+    tr.appendChild(noteTd);
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+
+  const s = data.stats || {};
+  const parts = [];
+  for (const k of ["modified", "added", "removed", "preserved", "unchanged"]) {
+    parts.push(`${changeLabel[k]}: ${s[k] || 0}`);
+  }
+  el.diffStats.textContent = parts.join("  \u00b7  ");
+}
+
+async function doHighlight() {
+  clearBadge();
+  if (!el.input.value.trim()) {
+    setStatus("Nothing to highlight \u2014 add some input first.", "err");
+    return;
+  }
+  setStatus("Building highlighted diff\u2026");
+  el.highlight.disabled = true;
+  try {
+    const data = await postJSON("/api/diff", currentPayload());
+    renderDiff(data);
+    openDiffPanel();
+    setStatus("Showing color-coded changes.", "ok");
+  } catch (err) {
+    setStatus("Error: " + err.message, "err");
+  } finally {
+    el.highlight.disabled = !(el.result.value && el.result.value.length);
+  }
+}
+
+// Pop the highlighted view out into a new browser tab, full-width.
+// The payload is handed to the new tab via sessionStorage keyed to a
+// short random id so it stays on the user's machine.  The new tab
+// reads the key from its URL, pulls the payload, fetches /api/diff
+// itself, and renders the same table.
+function popoutDiff() {
+  if (!el.input.value.trim()) {
+    setStatus("Nothing to pop out \u2014 add some input first.", "err");
+    return;
+  }
+  const key = "diff-payload-" + Math.random().toString(36).slice(2, 10);
+  try {
+    sessionStorage.setItem(key, JSON.stringify(currentPayload()));
+  } catch (err) {
+    setStatus("Could not stash payload for new tab: " + err.message, "err");
+    return;
+  }
+  const win = window.open("/highlight.html?k=" + encodeURIComponent(key), "_blank");
+  if (!win) {
+    setStatus("Pop-up was blocked by the browser. Allow pop-ups for 127.0.0.1 and try again.", "err");
+    sessionStorage.removeItem(key);
+    return;
+  }
+  setStatus("Opened highlighted view in a new tab.", "ok");
+}
+
 async function doVerify() {
   clearBadge();
   if (!el.input.value.trim()) {
-    setStatus("Nothing to verify \u2014 paste or load a config first.", "err");
+    setStatus("Nothing to verify \u2014 add some input first.", "err");
     return;
   }
   setStatus("Running round-trip\u2026");
@@ -142,7 +272,6 @@ async function doVerify() {
   }
 }
 
-// --- Output destinations --------------------------------------------------
 function triggerDownload() {
   const text = el.result.value;
   if (!text) return;
@@ -196,19 +325,22 @@ async function loadSample() {
   }
 }
 
-// --- Wiring ---------------------------------------------------------------
 function init() {
   el.convert.addEventListener("click", doConvert);
   el.verify.addEventListener("click", doVerify);
   el.copy.addEventListener("click", copyOutput);
   el.download.addEventListener("click", triggerDownload);
   el.format.addEventListener("change", suggestFilename);
+  el.highlight.addEventListener("click", doHighlight);
+  el.hideDiff.addEventListener("click", closeDiffPanel);
+  el.popout.addEventListener("click", popoutDiff);
   el.clear.addEventListener("click", () => {
     el.input.value = "";
     setOutput("");
     clearBadge();
     setStatus("");
     el.file.value = "";
+    closeDiffPanel();
   });
   el.file.addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];

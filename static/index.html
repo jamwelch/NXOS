@@ -74,12 +74,57 @@
       <span id="badge" class="badge" hidden></span>
 
       <div class="actions">
+        <button type="button" id="highlight" class="secondary" disabled
+                title="Show the conversion as a color-coded side-by-side table in a 3rd column">Highlight changes</button>
         <button type="button" id="copy" class="secondary" disabled>Copy to clipboard</button>
         <button type="button" id="download" class="primary" disabled>Download</button>
         <input type="text" id="filename" value="converted_ios2nxos.cfg"
                autocomplete="off" spellcheck="false" />
       </div>
       <p class="hint">Markers like <code>! ==IOSXE==</code> preserve lines that have no 1-to-1 NX-OS equivalent, so an A &rarr; B &rarr; A round-trip is lossless.</p>
+    </section>
+
+    <!-- Color-coded side-by-side diff view.  Lives as its own panel so
+         it participates in the main grid as a 3rd column instead of
+         pushing the output textarea or action buttons off-screen.
+         Toggled on/off via `body.has-diff` in app.js.  Built entirely
+         from server JSON via textContent / createElement; nothing is
+         innerHTML'd, so a malicious config cannot inject markup. -->
+    <section id="diff-panel" class="panel" aria-label="Highlighted side-by-side comparison">
+      <div class="panel-head">
+        <h2>3 &middot; Color-coded changes</h2>
+        <div class="panel-actions">
+          <button type="button" id="popout" class="ghost"
+                  title="Open this highlighted view in a new browser tab, full width">&#x2197; Pop out</button>
+          <button type="button" id="hide-diff" class="ghost"
+                  title="Collapse this column">Hide</button>
+        </div>
+      </div>
+
+      <div class="diff-view" id="diff-view">
+        <div class="diff-legend" aria-label="Color legend">
+          <span class="diff-legend-title">Legend:</span>
+          <span class="chip chip-modified">Modified</span>
+          <span class="chip chip-added">Added</span>
+          <span class="chip chip-removed">Removed</span>
+          <span class="chip chip-preserved">Preserved as comment</span>
+          <span class="chip chip-unchanged">Unchanged</span>
+          <span id="diff-stats" class="diff-stats"></span>
+        </div>
+        <div class="diff-table-wrap">
+          <table class="diff-table" id="diff-table">
+            <thead>
+              <tr>
+                <th scope="col" id="diff-src-h">Source</th>
+                <th scope="col" id="diff-dst-h">Target</th>
+                <th scope="col">Change</th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="diff-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 
